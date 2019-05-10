@@ -1,10 +1,6 @@
 #include <gtest/gtest.h>
 #include "src/BigInteger.h"
 
-TEST(BigNum, BigNum_Sample_Test) {
-    EXPECT_EQ(0, 0);
-}
-
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
