@@ -1,3 +1,4 @@
+#include <iostream>
 #include "BigInteger.h"
 #include "helpers.h"
 
@@ -24,17 +25,18 @@ namespace BigNum {
         return res;
     }
 
-    std::string BigInteger::toString() {
+    std::string BigInteger::toString() const {
         std::stringstream res;
         if (sign < 0)
             res << '-';
+        if (digits.empty())
+            return "0";
 
         for (auto it = digits.rbegin(); it != digits.rend(); it++) {
             res << std::to_string(*it);
         }
         return res.str();
     }
-
 
     BigInteger::BigInteger(int64_t val) : BigInteger(std::to_string(val)) {}
 
@@ -56,7 +58,7 @@ namespace BigNum {
 
     }
 
-    bool BigInteger::operator>(const BigInteger &oth) {
+    bool BigInteger::operator>(const BigInteger &oth) const {
         if (sign > 0 && oth.sign < 0)return true;
         if (sign < 0 && oth.sign > 0)return false;
 
@@ -72,23 +74,23 @@ namespace BigNum {
         return false; // equal
     }
 
-    bool BigInteger::operator<(const BigInteger &oth) {
+    bool BigInteger::operator<(const BigInteger &oth) const {
         return !(*this >= oth);
     }
 
-    bool BigInteger::operator>=(const BigInteger &oth) {
+    bool BigInteger::operator>=(const BigInteger &oth) const {
         return *this > oth || *this == oth;
     }
 
-    bool BigInteger::operator==(const BigInteger &oth) {
+    bool BigInteger::operator==(const BigInteger &oth) const {
         return sign == oth.sign && digits == oth.digits;
     }
 
-    bool BigInteger::operator!=(const BigInteger &oth) {
+    bool BigInteger::operator!=(const BigInteger &oth) const {
         return !(*this == oth);
     }
 
-    bool BigInteger::operator<=(const BigInteger &oth) {
+    bool BigInteger::operator<=(const BigInteger &oth) const {
         return *this < oth || *this == oth;
     }
 
@@ -97,28 +99,295 @@ namespace BigNum {
         return BigInteger(std::to_string(val));
     }
 
-    bool BigInteger::operator>(int64_t val) {
+    bool BigInteger::operator>(int64_t val) const {
         return *this > BigInteger(val);
     }
 
-    bool BigInteger::operator<(int64_t val) {
+    bool BigInteger::operator<(int64_t val) const {
         return *this < BigInteger(val);
     }
 
-    bool BigInteger::operator>=(int64_t val) {
+    bool BigInteger::operator>=(int64_t val) const {
         return *this >= BigInteger(val);
     }
 
-    bool BigInteger::operator<=(int64_t val) {
+    bool BigInteger::operator<=(int64_t val) const {
         return *this <= BigInteger(val);
     }
 
-    bool BigInteger::operator!=(int64_t val) {
+    bool BigInteger::operator!=(int64_t val) const {
         return *this != BigInteger(val);
     }
 
-    bool BigInteger::operator==(int64_t val) {
+    bool BigInteger::operator==(int64_t val) const {
         return *this == BigInteger(val);
+    }
+
+    BigInteger BigInteger::operator+(const BigInteger &oth) const {
+        if (sign != oth.sign) {
+            if (sign < 0) {
+                return oth - this->abs();
+            }
+            return *this - oth.abs();
+        }
+        BigInteger res;
+        int rest = 0;
+        for (size_t i = 0; i < std::max(digits.size(), oth.digits.size()); i++) {
+            res.digits.push_back(rest);
+            if (i < digits.size())
+                res.digits.back() += digits.at(i);
+            if (i < oth.digits.size())
+                res.digits.back() += oth.digits.at(i);
+            rest = res.digits.back() / 10;
+            res.digits.back() %= 10;
+        }
+
+        if (rest)
+            res.digits.push_back(rest);
+        res.sign = sign;
+        res.trimZeros();
+        return res;
+    }
+
+    BigInteger BigInteger::operator*(const BigInteger &oth) const {
+        BigInteger res;
+        if (sign != oth.sign)
+            return this->abs() * oth.abs();
+
+        for (size_t i = 0; i < oth.digits.size(); i++) {
+            BigInteger part;
+            auto mul = this->abs();
+            for (int _ = 0; _ < oth.digits.at(i); _++)
+                part += mul;
+            part.multiplyByFactorOf10(i);
+            res += part;
+        }
+
+        return res;
+    }
+
+    BigInteger BigInteger::operator-(const BigInteger &oth) const {
+        if (sign != oth.sign) {
+            if (sign < 0) {
+                return -(oth + this->abs());
+            }
+            return *this + oth.abs();
+        }
+        if (sign < 0 && oth.sign < 0) {
+            return oth.abs() - this->abs();
+        }
+        if (oth.abs() > *this)
+            return -(oth.abs() - *this);
+        BigInteger res;
+        int rest = 0;
+        for (size_t i = 0; i < std::max(digits.size(), oth.digits.size()); i++) {
+            res.digits.push_back(rest);
+            rest = 0;
+            if (i < digits.size())
+                res.digits.back() += digits.at(i);
+            if (i < oth.digits.size())
+                res.digits.back() -= oth.digits.at(i);
+            if (res.digits.back() < 0) {
+                rest = -1;
+                res.digits.back() = 10 + res.digits.back();
+            }
+        }
+
+        if (rest)
+            res.sign = -1;
+        res.trimZeros();
+        return res;
+    }
+
+    BigInteger BigInteger::operator/(const BigInteger &oth) const {
+        if (oth == 0)
+            throw std::invalid_argument("Division by zero");
+        if (this->abs() < oth.abs())
+            return {};
+
+        int factor = 0;
+        BigInteger oth_copy = oth.abs();
+        auto this_abs = abs();
+        while (this_abs > oth_copy) {
+            oth_copy.multiplyByFactorOf10(1);
+            factor++;
+        }
+
+        BigInteger lower{1};
+        BigInteger upper{1};
+        lower.multiplyByFactorOf10(factor - 1);
+        upper.multiplyByFactorOf10(factor);
+        while (upper - lower > 1) {
+            auto middle = upper + lower;
+            middle.divideBy2();
+            if (middle * oth.abs() < this_abs) {
+                lower = middle;
+            } else {
+                upper = middle;
+            }
+        }
+        lower.sign = sign * oth.sign;
+        return lower;
+
+    }
+
+    BigInteger BigInteger::operator+(int64_t val) const {
+        return *this + BigInteger(val);
+    }
+
+    BigInteger BigInteger::operator*(int64_t val) const {
+        return *this * BigInteger(val);
+    }
+
+    BigInteger BigInteger::operator-(int64_t val) const {
+        return *this - BigInteger(val);
+    }
+
+
+    BigInteger BigInteger::operator/(int64_t val) const {
+        return *this / BigInteger(val);
+    }
+
+    BigInteger BigInteger::abs() const {
+        BigInteger res;
+        res.digits = digits;
+        return res;
+    }
+
+    BigInteger &BigInteger::operator+=(const BigInteger &oth) {
+        *this = *this + oth;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator-=(const BigInteger &oth) {
+        *this = *this - oth;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator*=(const BigInteger &oth) {
+        *this = *this * oth;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator/=(const BigInteger &oth) {
+        *this = *this / oth;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator+=(int64_t val) {
+        *this = *this + val;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator-=(int64_t val) {
+        *this = *this - val;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator*=(int64_t val) {
+        *this = *this * val;
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator/=(int64_t val) {
+        *this = *this / val;
+        return *this;
+    }
+
+    BigInteger operator+(int64_t val, const BigInteger &bi) {
+        return BigInteger(val) + bi;
+    }
+
+    BigInteger operator-(int64_t val, const BigInteger &bi) {
+        return BigInteger(val) - bi;
+    }
+
+    BigInteger operator*(int64_t val, const BigInteger &bi) {
+        return BigInteger(val) * bi;
+    }
+
+    BigInteger operator/(int64_t val, const BigInteger &bi) {
+        return BigInteger(val) / bi;
+    }
+
+    double BigInteger::realDivide(uint64_t val) const {
+        return realDivide(BigInteger(val));
+    }
+
+    double BigInteger::realDivide(const BigInteger &oth) const {
+        if (oth == 0)
+            throw std::invalid_argument("Division by zero");
+        return toDouble() / oth.toDouble();
+    }
+
+    BigInteger BigInteger::operator-() const {
+        BigInteger res = *this;
+        res.sign = sign > 0 ? -1 : 1;
+        return res;
+    }
+
+    void BigInteger::trimZeros() {
+        for (auto it = digits.rbegin(); it != digits.rend(); it++) {
+            if (*it != 0) {
+                break;
+            }
+            digits.pop_back();
+        }
+    }
+
+    // insert leading zeros to vector of digits
+    void BigInteger::multiplyByFactorOf10(int factor) {
+        std::vector<int8_t> zeros(factor, 0);
+        digits.insert(digits.begin(), zeros.begin(), zeros.end());
+        trimZeros();
+    }
+
+    void BigInteger::divideBy2() {
+        for (auto it = digits.rbegin(); it != digits.rend(); it++) {
+            if (*it % 2 == 1) {
+                auto next = it;
+                next++;
+                if (next != digits.rend())
+                    *next += 10;
+            }
+            *it /= 2;
+        }
+        trimZeros();
+    }
+
+    BigInteger BigInteger::operator%(const BigInteger &oth) const {
+        BigInteger res = *this - (oth * (*this / oth));
+        if (sign > 0)
+            return res;
+        return -(res.abs() % oth);
+    }
+
+    BigInteger BigInteger::operator%(int64_t val) const {
+        return *this % BigInteger(val);
+    }
+
+    BigInteger &BigInteger::operator%=(int64_t val) {
+        *this = *this % BigInteger(val);
+        return *this;
+    }
+
+    BigInteger &BigInteger::operator%=(const BigInteger &oth) {
+        *this = *this % oth;
+        return *this;
+    }
+
+    BigInteger operator%(int64_t val, const BigInteger &bi) {
+        return BigInteger(val) % bi;
+    }
+
+    double BigInteger::toDouble() const {
+        double res = 0;
+        double tens = 1;
+        for (auto d : digits) {
+            res += (d * tens);
+            tens *= 10;
+        }
+        return sign * res;
     }
 
 
